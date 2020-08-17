@@ -1,0 +1,4 @@
+.DS_Store
+__pycache__
+*.pkl.bz2
+*.mem
