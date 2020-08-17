@@ -6,7 +6,7 @@ The traveling tournament problem is a difficult sports league scheduling problem
 > In: International Conference on Principles and Practice of Constraint Programming.
 > LNCS, vol. 2239, pp. 580–584. Springer (2001)
 
-The problem description, benchmark problem instances, and currently best known lower and upper bounds can be found on [Michael Trick's TTP page](http://https://mat.tepper.cmu.edu/TOURN/).
+The problem description, benchmark problem instances, and currently best known lower and upper bounds can be found on [Michael Trick's TTP page](https://mat.tepper.cmu.edu/TOURN/).
 
 This repository contains a Julia implementation of a beam search approach as presented in
 
