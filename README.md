@@ -20,7 +20,7 @@ To subsequently call the randomized beam search approach with shuffled team orde
 
 > julia ttp_beam_search.jl insts/circ/circ14.txt 3 true data/circ14_cvrph.pkl.bz2 10000 true random 0.001 -1 false
 
-A final feasible local search using the TTSA neighborhoods [3] can be activated by setting the last parameter to true.
+A final feasible local search using the TTSA neighborhoods [4] can be activated by setting the last parameter to true.
 
 There is also a [parallel beam search](https://github.com/nfrohner/parbeam) implementation for the TTP also faster in single threaded mode
 
