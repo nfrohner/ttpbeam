@@ -7,25 +7,42 @@ module TTPNodeEstimators
     using .TTPUtil
     export heuristic_cvrp_solution, heuristic_cvrp_home_solution, heuristic_estimate
 
+    #using Printf: @printf, @sprintf
+
     using PyCall
 
     # solve cvrp instance with google or-tools via python interface
-    function heuristic_cvrp_solution(ttp_instance::Main.TTPInstance.Instance, team::Int64, away_teams::Array{Int64}, position::Int64, streak::Int64)
+    function heuristic_cvrp_solution(ttp_instance::Main.TTPInstance.Instance, team::Int64, away_teams::Array{Int64}, position::Int64, streak::Int64, construction_heuristic="PARALLEL_CHEAPEST_INSERTION", improvement_heuristic="GREEDY_DESCENT", iteration_limit=nothing)
         pushfirst!(PyVector(pyimport("sys")."path"), "lib")
         heuristic_cvrp_methods = pyimport("heuristic_cvrp_methods")
-        return heuristic_cvrp_methods.heuristic_cvrp_solution_for_team(ttp_instance.d, ttp_instance.streak_limit, team-1, away_teams.-1, position-1, streak)
+        return heuristic_cvrp_methods.heuristic_cvrp_solution_for_team(ttp_instance.d, ttp_instance.streak_limit, team-1, away_teams.-1, position-1, streak, nothing, construction_heuristic, improvement_heuristic, iteration_limit)
     end
 
     # solve cvrph instance with google or-tools via python interface
-    function heuristic_cvrp_home_solution(ttp_instance::Main.TTPInstance.Instance, team::Int64, away_teams::Array{Int64}, position::Int64, streak::Int64, vehicles_min::Int64, vehicles_max::Int64)
+    function heuristic_cvrp_home_solution(ttp_instance::Main.TTPInstance.Instance, team::Int64, away_teams::Array{Int64}, position::Int64, streak::Int64, vehicles_min::Int64, vehicles_max::Int64, construction_heuristic="FIRST_UNBOUND_MIN_VALUE", improvement_heuristic="GREEDY_DESCENT", iteration_limit=nothing)
         pushfirst!(PyVector(pyimport("sys")."path"), "lib")
         heuristic_cvrp_methods = pyimport("heuristic_cvrp_methods")
         #@printf("%d %s %d min vehicles %d max vehicles %d\n", team, away_teams, position, vehicles_min, vehicles_max)
-        return heuristic_cvrp_methods.heuristic_cvrp_home_solution_for_team(ttp_instance.d, ttp_instance.streak_limit, team-1, away_teams.-1, position-1, streak, vehicles_min, vehicles_max)
+        return heuristic_cvrp_methods.heuristic_cvrp_home_solution_for_team(ttp_instance.d, ttp_instance.streak_limit, team-1, away_teams.-1, position-1, streak, vehicles_min, vehicles_max, nothing, construction_heuristic, improvement_heuristic, iteration_limit)
+    end
+
+    # solve cvrph instance with gurobi
+    function exact_cvrp_home_solution(ttp_instance::Main.TTPInstance.Instance, team::Int64, away_teams::Array{Int64}, position::Int64, streak::Int64, vehicles_min::Int64, vehicles_max::Int64, construction_heuristic="FIRST_UNBOUND_MIN_VALUE", improvement_heuristic="GREEDY_DESCENT", iteration_limit=nothing)
+        pushfirst!(PyVector(pyimport("sys")."path"), "lib")
+        gurobi_bound_methods = pyimport("gurobi_bound_methods")
+        #@printf("%d %s %d min vehicles %d max vehicles %d\n", team, away_teams, position, vehicles_min, vehicles_max)
+        obj, cycles = gurobi_bound_methods.solve_cvrp_home_with_gurobi(ttp_instance.d, position-1, streak, team-1, away_teams.-1, ttp_instance.streak_limit, vehicles_min, vehicles_max)
+        @assert cycles !== nothing
+        obj
+    end
+
+    # null estimator
+    function heuristic_estimate(ttp_instance::Main.TTPInstance.Instance, team::Int64, teams_left::Array{Int64}, number_of_home_games_left::Int64, position::Int64, streak::Int64, bounds_by_state::Nothing, heuristic_estimates_cache::Nothing)
+        0
     end
 
     # heuristic estimates based on precalculated exact cvrp bounds
-    function heuristic_estimate(ttp_instance::Main.TTPInstance.Instance, team::Int64, teams_left::Array{Int64}, number_of_home_games_left::Int64, position::Int64, streak::Int64, bounds_by_state::Array{UInt16,4}, heuristic_estimates_cache::Nothing)
+    function heuristic_estimate(ttp_instance::Main.TTPInstance.Instance, team::Int64, teams_left::Array{Int64}, number_of_home_games_left::Int64, position::Int64, streak::Int64, bounds_by_state::Array{UInt16,4}, heuristic_estimates_cache::Nothing, stats=nothing)
         if length(teams_left) == 0
             return ttp_instance.d[position, team]
         end
@@ -41,7 +58,7 @@ module TTPNodeEstimators
     end
 
     # heuristic estimates based on precalculated exact cvrph bounds
-    function heuristic_estimate(ttp_instance::Main.TTPInstance.Instance, team::Int64, teams_left::Array{Int64}, number_of_home_games_left::Int64, position::Int64, streak::Int64, bounds_by_state::Array{UInt16,5}, heuristic_estimates_cache::Nothing)
+    function heuristic_estimate(ttp_instance::Main.TTPInstance.Instance, team::Int64, teams_left::Array{Int64}, number_of_home_games_left::Int64, position::Int64, streak::Int64, bounds_by_state::Array{UInt16,5}, heuristic_estimates_cache::Nothing, stats=nothing)
         if length(teams_left) == 0
             return ttp_instance.d[position, team]
         end
@@ -56,30 +73,41 @@ module TTPNodeEstimators
         if team != position && streak == ttp_instance.streak_limit
             detour = ttp_instance.d[position, team]
             away_streak = 0
-            streak = 0
+            streak = 1
+            number_of_home_games_left -= 1
             position = team
         else
             detour = 0
         end
 
         minimum_home_stands_needed, maximum_home_stands_allowed = min_max_home_stands(ttp_instance, team, teams_left, number_of_home_games_left, position, streak)
-
-        best_bound_direct = minimum(bounds_by_state[team, mask_teams_left(team, teams_left), position, away_streak+1, minimum_home_stands_needed:maximum_home_stands_allowed])
+        @assert minimum_home_stands_needed <= maximum_home_stands_allowed
+        best_bound_direct = minimum(@view bounds_by_state[team, mask_teams_left(team, teams_left), position, away_streak+1, minimum_home_stands_needed:maximum_home_stands_allowed])
         if team != position
-            minimum_home_stands_needed_detour, maximum_home_stands_allowed_detour = min_max_home_stands(ttp_instance, team, teams_left, number_of_home_games_left, team, 0)
-            best_bound_via_home = ttp_instance.d[position, team] + minimum(bounds_by_state[team, mask_teams_left(team, teams_left), team, 1, minimum_home_stands_needed_detour:maximum_home_stands_allowed_detour])
+            minimum_home_stands_needed_detour, maximum_home_stands_allowed_detour = min_max_home_stands(ttp_instance, team, teams_left, number_of_home_games_left-1, team, 1)
+            if maximum_home_stands_allowed_detour < minimum_home_stands_needed_detour
+                best_bound_via_home = typemax(UInt16)
+            else
+                best_bound_via_home = ttp_instance.d[position, team] + minimum(@view bounds_by_state[team, mask_teams_left(team, teams_left), team, 1, minimum_home_stands_needed_detour:maximum_home_stands_allowed_detour])
+            end
         else
             best_bound_via_home = typemax(UInt16)
         end
 
+        #@printf("%d, %d\n", best_bound_direct, best_bound_via_home)
         return detour + min(best_bound_direct, best_bound_via_home)
     end
 
     # heuristic estimate based on heuristic solution of cvrp instance via google or-tools
-    function heuristic_estimate(ttp_instance::Main.TTPInstance.Instance, team::Int64, teams_left::Array{Int64}, number_of_home_games_left::Int64, position::Int64, streak::Int64, bounds_by_state::Nothing, heuristic_estimates_cache::Dict{NTuple{4,Int64},UInt16})
+    function heuristic_estimate(ttp_instance::Main.TTPInstance.Instance, team::Int64, teams_left::Array{Int64}, number_of_home_games_left::Int64, position::Int64, streak::Int64, bounds_by_state::Nothing, heuristic_estimates_cache::Dict{NTuple{4,Int64},UInt64}, stats=nothing, construction_heuristic="PARALLEL_CHEAPEST_INSERTION", improvement_heuristic="GREEDY_DESCENT", iteration_limit=nothing)
+        if length(teams_left) == 0
+            return ttp_instance.d[position, team]
+        end
+
         if team == position
             streak = 0
         end
+
         if streak == ttp_instance.streak_limit
             detour = ttp_instance.d[position, team]
             cache_key = (team, mask_teams_left(team, teams_left), team, 0)
@@ -87,9 +115,19 @@ module TTPNodeEstimators
             detour = 0
             cache_key = (team, mask_teams_left(team, teams_left), position, streak)
         end
+
         if !haskey(heuristic_estimates_cache, cache_key)
-            heuristic_estimates_cache[cache_key] = heuristic_cvrp_solution(ttp_instance, team, teams_left, position, streak)
+            heuristic_calculation_time = @elapsed heuristic_estimates_cache[cache_key] = heuristic_cvrp_solution(ttp_instance, team, teams_left, position, streak, construction_heuristic, improvement_heuristic, iteration_limit)
+            if stats !== nothing
+                stats.cache_misses += 1
+                stats.heuristics_calculation_time += heuristic_calculation_time
+            end
+        else
+            if stats !== nothing
+                stats.cache_hits += 1
+            end
         end
+        
         return detour + heuristic_estimates_cache[cache_key]
     end
 
@@ -97,8 +135,9 @@ module TTPNodeEstimators
     #     the current streak counts as a vehicle
     function min_max_vehicles(ttp_instance::Main.TTPInstance.Instance, team::Int64, teams_left::Array{Int64}, number_of_home_games_left::Int64, position::Int64, streak::Int64)
         minimum_vehicles_needed = max(min_vehicles_by_home_games(ttp_instance, team, teams_left, number_of_home_games_left, position, streak), min_vehicles_by_away_games(ttp_instance, team, teams_left, number_of_home_games_left, position, streak))
-        maximum_vehicles_allowed = min(max_vehicles_by_home_games(ttp_instance, team, teams_left, number_of_home_games_left, position, streak), max_vehicles_by_away_games(ttp_instance, team, teams_left, number_of_home_games_left, position, streak))
-        maximum_vehicles_allowed = max(maximum_vehicles_allowed, minimum_vehicles_needed)
+        max_by_home_games = max_vehicles_by_home_games(ttp_instance, team, teams_left, number_of_home_games_left, position, streak)
+        max_by_away_games = max_vehicles_by_away_games(ttp_instance, team, teams_left, number_of_home_games_left, position, streak)
+        maximum_vehicles_allowed = min(max_by_home_games, max_by_away_games)
 
         minimum_vehicles_needed, maximum_vehicles_allowed
     end
@@ -108,7 +147,7 @@ module TTPNodeEstimators
         minimum_vehicles_needed, maximum_vehicles_allowed = min_max_vehicles(ttp_instance, team, teams_left, number_of_home_games_left, position, streak)
 
         if team == position
-            minimum_vehicles_needed + 1, maximum_vehicles_allowed + 1
+            minimum_vehicles_needed + 1, min(maximum_vehicles_allowed + 1, ttp_instance.n)
         else
             minimum_vehicles_needed, maximum_vehicles_allowed
         end
@@ -137,8 +176,8 @@ module TTPNodeEstimators
         1 + number_of_home_games_left
     end
 
-    # if the streak limit > 1, it is never optimal to have more the one streak with length one, since they can be merged
-    function max_vehicles_by_away_games(ttp_instance::Main.TTPInstance.Instance, team::Int64, teams_left::Array{Int64}, number_of_home_games_left::Int64, position::Int64, streak::Int64)
+    # if the streak limit > 1, it is never optimal to have more the one streak with length one, since they can be merged, if the triangle inequality holds and this is within the allowed home stands
+    function max_vehicles_by_away_games_triangle(ttp_instance::Main.TTPInstance.Instance, team::Int64, teams_left::Array{Int64}, number_of_home_games_left::Int64, position::Int64, streak::Int64)
         if team == position
             convert(Int64, ceil(length(teams_left)/min(ttp_instance.streak_limit, 2)))
         else
@@ -150,26 +189,50 @@ module TTPNodeEstimators
         end
     end
 
-    # heuristic estimate based on heuristic solution of cvrph instance via google or-tools
-    function heuristic_estimate(ttp_instance::Main.TTPInstance.Instance, team::Int64, teams_left::Array{Int64}, number_of_home_games_left::Int64, position::Int64, streak::Int64, bounds_by_state::Nothing, heuristic_estimates_cache::Dict{NTuple{6,Int64},UInt16})
-        minimum_vehicles_needed, maximum_vehicles_allowed = min_max_vehicles(ttp_instance, team, teams_left, number_of_home_games_left, position, streak)
+    # we need at least one away game for every streak
+    function max_vehicles_by_away_games(ttp_instance::Main.TTPInstance.Instance, team::Int64, teams_left::Array{Int64}, number_of_home_games_left::Int64, position::Int64, streak::Int64)
+        if team == position
+            length(teams_left)
+        else
+            1 + length(teams_left)
+        end
+    end
 
+    # heuristic estimate based on heuristic solution of cvrph instance via google or-tools
+    function heuristic_estimate(ttp_instance::Main.TTPInstance.Instance, team::Int64, teams_left::Array{Int64}, number_of_home_games_left::Int64, position::Int64, streak::Int64, bounds_by_state::Nothing, heuristic_estimates_cache::Dict{NTuple{6,Int64},UInt64}, stats=nothing, construction_heuristic="FIRST_UNBOUND_MIN_VALUE", improvement_heuristic="GREEDY_DESCENT", iteration_limit=nothing)
+        if length(teams_left) == 0
+            return ttp_instance.d[position, team]
+        end
+        
+        minimum_vehicles_needed, maximum_vehicles_allowed = min_max_vehicles(ttp_instance, team, teams_left, number_of_home_games_left, position, streak)
+     
+        # streak is from now on the away streak
         if team == position
             streak = 0
         end
 
+        # return home if we hit the away streak limit
         if streak == ttp_instance.streak_limit
             detour = ttp_instance.d[position, team]
-            minimum_vehicles_needed = max(minimum_vehicles_needed-1, 0)
-            maximum_vehicles_allowed = max(maximum_vehicles_allowed-1, 0)
-            cache_key = (team, mask_teams_left(team, teams_left), team, 0, minimum_vehicles_needed, maximum_vehicles_allowed)
+            position = team
+            streak = 0
+            minimum_vehicles_needed, maximum_vehicles_allowed = min_max_vehicles(ttp_instance, team, teams_left, number_of_home_games_left-1, position, 1)
         else
             detour = 0
-            cache_key = (team, mask_teams_left(team, teams_left), position, streak, minimum_vehicles_needed, maximum_vehicles_allowed)
         end
 
+        cache_key = (team, mask_teams_left(team, teams_left), position, streak, minimum_vehicles_needed, maximum_vehicles_allowed)
         if !haskey(heuristic_estimates_cache, cache_key)
-            heuristic_estimates_cache[cache_key] = heuristic_cvrp_home_solution(ttp_instance, team, teams_left, position, streak, minimum_vehicles_needed, maximum_vehicles_allowed)
+            heuristic_calculation_time = @elapsed heuristic_estimates_cache[cache_key] = heuristic_cvrp_home_solution(ttp_instance, team, teams_left, position, streak, minimum_vehicles_needed, maximum_vehicles_allowed, construction_heuristic, improvement_heuristic, iteration_limit)
+            #heuristic_estimates_cache[cache_key] = exact_cvrp_home_solution(ttp_instance, team, teams_left, position, streak, minimum_vehicles_needed, maximum_vehicles_allowed, construction_heuristic, improvement_heuristic, iteration_limit)
+            if stats !== nothing
+                stats.cache_misses += 1
+                stats.heuristics_calculation_time += heuristic_calculation_time
+            end
+        else
+            if stats !== nothing
+                stats.cache_hits += 1
+            end
         end
 
         return detour + heuristic_estimates_cache[cache_key]

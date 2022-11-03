@@ -4,9 +4,9 @@ module TTPInstance
     using DelimitedFiles
 
     struct Instance
-        n::UInt8
+        n::Int
         d::Array{UInt16, 2}
-        streak_limit::UInt8
+        streak_limit::Int
         no_repeat::Bool
     end
 

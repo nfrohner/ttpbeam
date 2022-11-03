@@ -5,7 +5,7 @@ module TTPStates
     import Base.isequal
     import Base.isless
 
-    export State, Node, update_state, hash, isequal
+    export State, Node, SmallNode, update_state, hash, isequal
 
     # the state with corresponding hash and equality check functions, a state determines the set feasible completions for a corresponding partial schedule
     struct State
@@ -46,7 +46,25 @@ module TTPStates
         Node() = new(0, 0, typemax(Int64), 0, nothing, [], 0.0, [], [], [], [], [], 0, 0, 0, 0)
     end
 
+    mutable struct SmallNode
+        layer::Int64
+        shortest_path_length::Int64
+        heuristic_estimate::Int64
+        games_left::Int64
+        state::Union{State, Nothing}
+        heuristic_estimates::Array{Int64}
+        solution::Vector{Tuple{Int64,Int64}}
+        noise::Float64
+        SmallNode() = new(0, 0, typemax(Int64), 0, nothing, [], [], 0.0)
+    end
+
     function isequal(a::Node, b::Node)
+        a_val = (a.shortest_path_length + a.heuristic_estimate + a.noise, a.shortest_path_length)
+        b_val = (b.shortest_path_length + b.heuristic_estimate + b.noise, b.shortest_path_length)
+        isequal(a_val, b_val)
+    end
+
+    function isequal(a::SmallNode, b::SmallNode)
         a_val = (a.shortest_path_length + a.heuristic_estimate + a.noise, a.shortest_path_length)
         b_val = (b.shortest_path_length + b.heuristic_estimate + b.noise, b.shortest_path_length)
         isequal(a_val, b_val)
@@ -58,8 +76,14 @@ module TTPStates
         isless(a_val, b_val)
     end
 
+    function isless(a::SmallNode, b::SmallNode)
+        a_val = (a.shortest_path_length + a.heuristic_estimate + a.noise, a.shortest_path_length)
+        b_val = (b.shortest_path_length + b.heuristic_estimate + b.noise, b.shortest_path_length)
+        isless(a_val, b_val)
+    end
+
     # a state transitions copies the existing states and makes corresponding updates determined by the game being played
-    function update_state(ttp_instance::Main.TTPInstance.Instance, state::State, away_team::Int64, home_team::Int64, home_team_number_of_away_games_left::Int64, away_team_number_of_home_games_left::Int64)
+    function update_state(ttp_instance::Main.TTPInstance.Instance, state, away_team::Int64, home_team::Int64, home_team_number_of_away_games_left::Int64, away_team_number_of_home_games_left::Int64)
         games_left = copy(state.games_left)
         games_left[away_team, home_team] = false
 

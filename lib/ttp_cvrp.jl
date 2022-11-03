@@ -76,7 +76,7 @@ module TTPCVRP
         end
     end
 
-    function construct(team::UInt8, ttp_instance::Main.TTPInstance.Instance, streak_limit::UInt8)
+    function construct(team::UInt8, ttp_instance::Main.TTPInstance.Instance, streak_limit)
         root = Node()
         root.shortest_path_length = 0
         root.state = State(delete!(BitSet(1:ttp_instance.n), team), team, 0)

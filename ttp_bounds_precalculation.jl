@@ -32,6 +32,19 @@ function main()
     @printf("bounds sum %d\n", sum(bounds_by_state))
     @printf("root bound %d\n", root_bound_sum)
 
+    root_bound = 0
+    for team in 1:ttp_instance.n
+        if cvrp_h_bounds
+            team_root_bound = minimum(@view bounds_by_state[team, 2^(ttp_instance.n-1), team, 1, :])
+        else
+            team_root_bound = bounds_by_state[team, 2^(ttp_instance.n-1), team, 1]
+        end
+        root_bound += team_root_bound
+        @printf("team %d bound %d\n", team, team_root_bound)
+    end
+
+    @printf("root bound: %d\n", root_bound)
+
     save_numpy_pickle(numpy_pickle_file, bounds_by_state)
 end
 
