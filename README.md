@@ -10,28 +10,34 @@ The problem description, benchmark problem instances, and currently best known l
 
 This repository contains a Julia implementation of a beam search approach as presented in [1].
 
-The code has been tested with Julia 1.7.2 and DataStructures.jl 0.18.3. Google OR-Tools 9.4 with Python 3.9 are interfaced via PyCall.jl.
+The code has been tested with Julia 1.10.2 and DataStructures.jl 0.18.20. Google OR-Tools 9.9 with Python 3.12 are interfaced via PyCall.jl.
 
-To precalculate the lower bounds for teams' states of an instances (aka disjoint pattern database, similar as done by [2,3]), to be saved into a pickled and bz2 compressed numpy array:
+Installation of dependencies assuming a python3 with ortools installed in the path:
 
-> julia ttp_bounds_precalculation.jl insts/circ/circ14.txt 3 data/circ14_cvrph.pkl.bz2 true
+> julia --project=. -e "import Pkg; Pkg.instantiate(verbose=true)"
+> PYTHON=`which python3` julia --project=. -e 'using Pkg; Pkg.build("PyCall")'
+
+To precalculate the lower bounds for teams' states of an instance (aka disjoint pattern database, similar as done by [2,3]), to be saved into a pickled and bz2 compressed numpy array:
+
+> julia --project=. ttp_bounds_precalculation.jl insts/circ/circ14.txt 3 data/circ14_cvrph.pkl.bz2 true
 
 To subsequently call the randomized beam search approach with shuffled team ordering and relative noise of 0.001:
 
-> julia ttp_beam_search.jl insts/circ/circ14.txt 3 true data/circ14_cvrph.pkl.bz2 10000 true random 0.001 -1 false
+> julia --project=. ttp_beam_search.jl insts/circ/circ14.txt 3 true data/circ14_cvrph.pkl.bz2 10000 true random 0.001 -1 false
 
 A final feasible local search using the TTSA neighborhoods [4] can be activated by setting the last parameter to true.
 
-There is also a [parallel beam search](https://github.com/nfrohner/parbeam) implementation for the TTP also faster in single threaded mode
+There is also a [parallel beam search](https://github.com/nfrohner/parbeam) implementation for the TTP also faster in single threaded mode.
 
-Alternatively, Google OR-Tools can be used to solve the arising capacitated vehicle routing problems on the fly used as guidance for the beam search and keep already solved problems in a cache:
+Alternatively, Google OR-Tools can be used to solve the arising capacitated vehicle routing problems (CVRPs) on the fly used as guidance for the beam search and keep already solved problems in a cache:
 
-> julia ttp_beam_search_ortools.jl insts/circ/circ14.txt 3 true 16384 true lexicographic none 0.0 false -1
+> julia --project=. ttp_beam_search_ortools.jl insts/circ/circ14.txt 3 true 16384 true lexicographic none 0.0 false -1
 
 For the latter, there is also an iterative variant, which increases the beam width by a factor every number of runs until either a time or maximum beam width is hit:
 
-> julia ttp_beam_search_ortools_iter.jl insts/NL/nl10.txt 3 true 3600 128 32768 2 true random none 0.001 2 true -1
+> julia --project=. ttp_beam_search_ortools_iter.jl insts/NL/nl10.txt 3 true 3600 128 32768 2 true random none 0.001 2 true -1
 
+[ks^-1] are thousands of nodes explored per second, lce [log] represents a log cache efficiency by a cache miss fraction (e.g., -3 means every 1000th CVRP calculation needed to be performed from scratch, the remaining were retrieved from cache), tph [ms] is the average time per such a CVRP calculation in milliseconds.
 
 ## References
 
