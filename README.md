@@ -15,7 +15,8 @@ The code has been tested with Julia 1.10.2 and DataStructures.jl 0.18.20. Google
 Installation of dependencies assuming a python3 with ortools installed in the path:
 
 > julia --project=. -e "import Pkg; Pkg.instantiate(verbose=true)"
-> PYTHON=`which python3` julia --project=. -e 'using Pkg; Pkg.build("PyCall")'
+
+> PYTHON=\`which python3\` julia --project=. -e 'using Pkg; Pkg.build("PyCall")'
 
 To precalculate the lower bounds for teams' states of an instance (aka disjoint pattern database, similar as done by [2,3]), to be saved into a pickled and bz2 compressed numpy array:
 
